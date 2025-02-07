@@ -1,23 +1,25 @@
 import asyncio
 import logging
 import os
-import openai
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
+import openai
+import json
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
 
-# Загружаем токены из переменных окружения
-TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
+# Загружаем токены
+TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
 
 # Создаём объекты бота и диспетчера
-bot = Bot(token=TELEGRAM_TOKEN)
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Настраиваем клавиатуру меню
+# Меню команд
 menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Анализ задачи")],
@@ -27,83 +29,83 @@ menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Устанавливаем API-ключ OpenAI
-openai.api_key = OPENAI_API_KEY
+# Инлайн-кнопки для генерации WARNORD
+warnord_menu = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="Ситуация", callback_data="situation")],
+        [InlineKeyboardButton(text="Задание", callback_data="mission")],
+        [InlineKeyboardButton(text="Выполнение", callback_data="execution")],
+        [InlineKeyboardButton(text="Логистика", callback_data="logistics")],
+        [InlineKeyboardButton(text="Связь", callback_data="comms")],
+        [InlineKeyboardButton(text="Экспортировать", callback_data="export_warnord")],
+    ]
+)
 
+# Словарь для хранения данных WARNORD
+warnord_data = {}
+
+# Команда /start
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer("Привет! Я тактический ассистент. Выбери действие:", reply_markup=menu)
 
-@dp.message(lambda message: message.text == "Создать WARNORD")
-async def request_task(message: types.Message):
-    await message.answer("Отправь текст боевой задачи, и я сформирую WARNORD.")
+# Анализ задачи (5W)
+@dp.message(lambda message: message.text == "Анализ задачи")
+async def analyze_task(message: types.Message):
+    await message.answer("Отправь текст задачи для анализа:")
 
-@dp.message(lambda message: message.text and message.text != "Создать WARNORD")
+@dp.message(lambda message: message.text and message.text != "Анализ задачи")
 async def process_task(message: types.Message):
-    task_text = message.text
+    await message.answer("Анализирую задачу...")
 
     try:
-        # Параграф 1: Ситуация (METT-TC, OCOKA, ASCOPE, погода)
-        response_situation = openai.ChatCompletion.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "Ты военный аналитик. Проведи анализ METT-TC, OCOKA, ASCOPE и погоды для боевой задачи."},
-                {"role": "user", "content": task_text}
+                {"role": "system", "content": "Разбери задачу по методу 5W."},
+                {"role": "user", "content": message.text}
             ]
         )
-        situation = response_situation["choices"][0]["message"]["content"]
+        task_analysis = json.loads(response["choices"][0]["message"]["content"])
+        warnord_data["task"] = task_analysis
 
-        # Параграф 2: Задание (5W)
-        response_task = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Ты военный офицер. Сформулируй боевое задание по принципу 5W."},
-                {"role": "user", "content": task_text}
-            ]
+        formatted_analysis = (
+            f"**Время задания:** {task_analysis.get('when', 'не указано')}\n\n"
+            f"**Цель:**\n{task_analysis.get('what', 'не указано')}\n"
         )
-        task = response_task["choices"][0]["message"]["content"]
 
-        # Параграф 3: Выполнение
-        response_execution = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Ты военный стратег. Составь детальный план выполнения операции, разделив его на фазы."},
-                {"role": "user", "content": task_text}
-            ]
-        )
-        execution = response_execution["choices"][0]["message"]["content"]
-
-        # Параграф 4: Логистика
-        response_logistics = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Ты военный офицер снабжения. Опиши логистическое обеспечение операции."},
-                {"role": "user", "content": task_text}
-            ]
-        )
-        logistics = response_logistics["choices"][0]["message"]["content"]
-
-        # Параграф 5: Командование и связь
-        response_command = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Ты военный офицер связи. Опиши структуру командования и систему связи."},
-                {"role": "user", "content": task_text}
-            ]
-        )
-        command = response_command["choices"][0]["message"]["content"]
-
-        # Отправка результатов
-        await message.answer(f"📋 **WARNORD: Боевой приказ**")
-        await message.answer(f"📌 **1. СИТУАЦИЯ:**\n\n{situation}")
-        await message.answer(f"📌 **2. ЗАДАНИЕ:**\n\n{task}")
-        await message.answer(f"📌 **3. ВЫПОЛНЕНИЕ:**\n\n{execution}")
-        await message.answer(f"📌 **4. ЛОГИСТИКА:**\n\n{logistics}")
-        await message.answer(f"📌 **5. КОМАНДОВАНИЕ И СВЯЗЬ:**\n\n{command}")
-
+        await message.answer(formatted_analysis, parse_mode="Markdown")
+        await message.answer("Теперь можно создать WARNORD:", reply_markup=warnord_menu)
+    
     except Exception as e:
-        logging.error(f"Ошибка при вызове OpenAI API: {e}")
-        await message.answer("Произошла ошибка при генерации WARNORD.")
+        logging.error(f"Ошибка при анализе: {e}")
+        await message.answer("Произошла ошибка при анализе задачи.")
+
+# Генерация WARNORD по частям
+@dp.callback_query(lambda c: c.data in ["situation", "mission", "execution", "logistics", "comms"])
+async def generate_warnord(callback: types.CallbackQuery):
+    section = callback.data
+
+    warnord_templates = {
+        "situation": "Параграф 1: СИТУАЦИЯ\nОперативная обстановка в зоне операции...",
+        "mission": f"Параграф 2: ЗАДАНИЕ\n{warnord_data.get('task', {}).get('what', 'не указано')}",
+        "execution": "Параграф 3: ВЫПОЛНЕНИЕ\nДетальный план действий...",
+        "logistics": "Параграф 4: ЛОГИСТИКА\nОбеспечение боеприпасами, медицинская поддержка...",
+        "comms": "Параграф 5: КОМАНДОВАНИЕ И СВЯЗЬ\nСредства связи и сигналы..."
+    }
+
+    warnord_data[section] = warnord_templates[section]
+    await callback.message.answer(warnord_templates[section], parse_mode="Markdown")
+
+# Экспорт полного WARNORD
+@dp.callback_query(lambda c: c.data == "export_warnord")
+async def export_warnord(callback: types.CallbackQuery):
+    full_warnord = "\n\n".join([warnord_data.get(sec, f"{sec.upper()} не заполнен.") for sec in ["situation", "mission", "execution", "logistics", "comms"]])
+    await callback.message.answer(f"**Полный WARNORD:**\n\n{full_warnord}", parse_mode="Markdown")
+
+# Запуск бота
+async def main():
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(dp.start_polling(bot))
+    asyncio.run(main())
