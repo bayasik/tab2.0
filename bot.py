@@ -1,173 +1,159 @@
 import asyncio
 import logging
 import os
+import json
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
 import openai
-import json
-from datetime import datetime
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
 
-# Загружаем токены
+# Загружаем токены из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# Создаём объекты бота и диспетчера
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-openai.api_key = OPENAI_API_KEY
-
-# Создаем клавиатуру
+# Создаём клавиатуру меню
 menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Анализ задачи")],
-        [KeyboardButton(text="Создать WARNORD")],
-        [KeyboardButton(text="Погода")],
+        [KeyboardButton(text="📊 Анализ задачи")],
+        [KeyboardButton(text="⚔ Создать WARNORD")],
+        [KeyboardButton(text="🌤 Погода")],
     ],
     resize_keyboard=True
 )
+
+openai.api_key = OPENAI_API_KEY
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer("Привет! Я тактический ассистент. Выбери действие:", reply_markup=menu)
 
-# Функция анализа задачи по 5W
-async def analyze_task(task_text):
+@dp.message()
+async def handle_messages(message: types.Message):
+    text = message.text.lower()
+
+    if text == "📊 анализ задачи":
+        await message.answer("Отправь текст боевой задачи для анализа (5W, METT-TC, OCOKA, ASCOPE, анализ погоды).")
+    elif text == "⚔ создать warnord":
+        await message.answer("Отправь текст боевой задачи для генерации полного WARNORD.")
+    elif text == "🌤 погода":
+        weather_report = await analyze_weather()
+        await message.answer(weather_report, parse_mode="Markdown")
+    else:
+        if message.reply_to_message and "для анализа" in message.reply_to_message.text:
+            analysis = await analyze_task(message.text)
+            await message.answer(f"📊 **Результат анализа:**\n{analysis}", parse_mode="Markdown")
+        elif message.reply_to_message and "для генерации полного WARNORD" in message.reply_to_message.text:
+            warnord = await generate_warnord(message.text)
+            await message.answer(f"⚔ **WARNORD:**\n{warnord}", parse_mode="Markdown")
+
+### АНАЛИЗ ЗАДАЧИ (5W, METT-TC, OCOKA, ASCOPE, анализ погоды)
+async def analyze_task(task_text: str):
     prompt = f"""
-    Разбей задачу на 5W:
-    1. Кто? (who)
-    2. Что нужно сделать? (what)
-    3. Где? (where)
-    4. Когда? (when)
-    5. Почему? (why)
+Ты — тактический аналитик. Разбери боевую задачу по следующим параметрам:
+1️⃣ **5W:** (Who, What, Where, When, Why)  
+2️⃣ **METT-TC:** (Mission, Enemy, Terrain, Troops, Time, Civilians)  
+3️⃣ **OCOKA:** (Observation, Cover & Concealment, Obstacles, Key Terrain, Avenues of Approach)  
+4️⃣ **ASCOPE:** (Area, Structures, Capabilities, Organizations, People, Events)  
+5️⃣ **Анализ погоды:** Влияние на выполнение миссии.  
 
-    Текст задачи:
-    {task_text}
-
-    Ответь в формате JSON.
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "system", "content": "Ты военный аналитик."},
-                  {"role": "user", "content": prompt}]
-    )
-
-    return json.loads(response['choices'][0]['message']['content'])
-
-# Функция для анализа боевой обстановки (METT-TC, OCOKA, ASCOPE, погода)
-async def analyze_battlefield(task_details):
-    prompt = f"""
-    Проанализируй задачу по следующим критериям:
-
-    **1. METT-TC:**
-    - Mission (Задача)
-    - Enemy (Противник)
-    - Terrain (Местность)
-    - Troops (Дружественные силы)
-    - Time (Время)
-    - Civilians (Гражданские)
-
-    **2. OCOKA (Анализ местности):**
-    - Observation & Fields of Fire
-    - Cover & Concealment
-    - Obstacles
-    - Key Terrain
-    - Avenues of Approach
-
-    **3. ASCOPE (Анализ гражданского фактора):**
-    - Area
-    - Structures
-    - Capabilities
-    - Organizations
-    - People
-    - Events
-
-    Текст задачи:
-    {task_details}
-
-    Ответь в структурированном формате.
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "system", "content": "Ты военный аналитик."},
-                  {"role": "user", "content": prompt}]
-    )
-
-    return response['choices'][0]['message']['content']
-
-# Функция генерации WARNORD
-async def generate_warnord(task_details):
-    prompt = f"""
-    Сформируй WARNORD по следующей задаче:
-
-    {task_details}
-
-    **WARNORD:**
-    1. **Ситуация** (Обзор METT-TC, OCOKA, ASCOPE)
-    2. **Задание** (5W)
-    3. **Выполнение** (Основные этапы и тактика)
-    4. **Логистика** (Обеспечение, транспорт, медицинская поддержка)
-    5. **Командование и связь** (Ответственные лица, сигналы связи)
-
-    Ответь в четко структурированном формате.
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "system", "content": "Ты офицер штаба, составляющий WARNORD."},
-                  {"role": "user", "content": prompt}]
-    )
-
-    return response['choices'][0]['message']['content']
-
-# Обработчик анализа задачи
-@dp.message(lambda message: message.text == "Анализ задачи")
-async def process_analysis(message: types.Message):
-    await message.answer("Отправь текст задачи для анализа:")
-
-@dp.message(lambda message: message.text.startswith("Боевая задача:"))
-async def analyze_and_respond(message: types.Message):
-    await message.answer("Анализирую задачу...")
-    analysis = await analyze_task(message.text)
-    battlefield_info = await analyze_battlefield(message.text)
-
-    response_text = f"""
-📌 **Результат анализа:**
-1️⃣ **Кто?** {analysis['who']}
-2️⃣ **Что?** {analysis['what']}
-3️⃣ **Где?** {analysis['where']}
-4️⃣ **Когда?** {analysis['when']}
-5️⃣ **Почему?** {analysis['why']}
-
-⚠ **Анализ боевой обстановки:**
-{battlefield_info}
+Текст задачи: {task_text}
 """
-    await message.answer(response_text)
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4-turbo",
+            messages=[{"role": "system", "content": prompt}],
+            max_tokens=1000
+        )
+        return response["choices"][0]["message"]["content"]
+    except openai.OpenAIError as e:
+        logging.error(f"Ошибка OpenAI API: {e}")
+        return "❌ Ошибка при анализе задачи."
 
-# Обработчик генерации WARNORD
-@dp.message(lambda message: message.text == "Создать WARNORD")
-async def warnord_request(message: types.Message):
-    await message.answer("Отправь текст боевой задачи для генерации полного WARNORD:")
+### ГЕНЕРАЦИЯ ПОЛНОГО WARNORD
+async def generate_warnord(task_text: str):
+    prompt = f"""
+Ты — военный штабной офицер. Сгенерируй полный WARNORD для этой боевой задачи, используя следующий формат:
 
-@dp.message(lambda message: message.text.startswith("Боевая задача:"))
-async def generate_and_respond(message: types.Message):
-    await message.answer("Генерирую WARNORD...")
-    warnord = await generate_warnord(message.text)
+1️⃣ **Ситуация**  
+- Зона интереса  
+- Зона операции  
+- Описание местности (OCOKA)  
+- Погодные условия (анализ влияния погоды)  
+- Вражеское окружение (METT-TC)  
+- Дружественные силы (METT-TC)  
+- Гражданский фактор (ASCOPE)  
 
-    response_text = f"""
-📌 **Предварительный боевой приказ (WARNORD):**
-{warnord}
+2️⃣ **Задание**  
+- 5W (Кто, Что, Где, Когда, Почему)  
+
+3️⃣ **Исполнение**  
+- Общая концепция  
+- Основные усилия  
+- Фазы выполнения  
+- Индивидуальные задачи бойцов  
+- Ожидаемый результат  
+
+4️⃣ **Логистика**  
+- Медицинское обеспечение  
+- Боеприпасы, топливо, питание  
+- Средства передвижения  
+- Техническое обеспечение  
+
+5️⃣ **Командование и связь**  
+- Командная структура  
+- Каналы связи  
+- Кодовые слова и экстренные сигналы  
+
+**Текст боевой задачи:** {task_text}
 """
-    await message.answer(response_text)
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4-turbo",
+            messages=[{"role": "system", "content": prompt}],
+            max_tokens=1500
+        )
+        return response["choices"][0]["message"]["content"]
+    except openai.OpenAIError as e:
+        logging.error(f"Ошибка OpenAI API: {e}")
+        return "❌ Ошибка при генерации WARNORD."
 
-# Запуск бота
+### АНАЛИЗ ПОГОДЫ (ТАБЛИЦА)
+async def analyze_weather():
+    prompt = """
+Ты — военный метеоролог. Составь анализ погоды в таком формате (пример):
+📊 Анализ погоды
+
+Условия	Влияние на нас	Влияние на врага	Вывод
+Видимость	Ограничена дымкой	Вражеские БПЛА сложнее применить	Уменьшенная видимость
+Ветер	10 м/с, южный	Ограничивает точность стрельбы	Ветер мешает снайперам
+Осадки	Моросящий дождь	Размокание почвы	Усложняет передвижение
+Тучность	Высокая	Снижает точность дронов	Ограниченная аэроразведка
+Температура	+5°C, влажность 80%	Возможность переохлаждения	Требуется утепление
+
+Анализ погоды должен включать видимость, ветер, осадки, тучность, температуру и влажность, а также их влияние на обе стороны.
+“””
+try:
+response = openai.ChatCompletion.create(
+model=“gpt-4-turbo”,
+messages=[{“role”: “system”, “content”: prompt}],
+max_tokens=500
+)
+return response[“choices”][0][“message”][“content”]
+except openai.OpenAIError as e:
+logging.error(f”Ошибка OpenAI API: {e}”)
+return “❌ Ошибка при анализе погоды.”
+
+ЗАПУСК БОТА
+
 async def main():
-    await dp.start_polling(bot)
+await dp.start_polling(bot)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if name == “main”:
+asyncio.run(main())
