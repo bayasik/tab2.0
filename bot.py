@@ -43,16 +43,17 @@ async def handle_messages(message: types.Message):
     elif text == "⚔ создать warnord":
         await message.answer("Отправь текст боевой задачи для генерации полного WARNORD.", reply_markup=menu)
     elif text == "🌤 погода":
+        await message.answer("🌍 Обрабатываю запрос... (анализ погоды)", reply_markup=menu)
         weather_report = await analyze_weather()
         await message.answer(weather_report, parse_mode="Markdown", reply_markup=menu)
     else:
         if message.reply_to_message:
             if "для анализа" in message.reply_to_message.text:
-                await message.answer("Анализирую задачу... 🔍", reply_markup=menu)
+                await message.answer("🔍 Обрабатываю запрос... (анализ задачи)", reply_markup=menu)
                 analysis = await analyze_task(message.text)
                 await message.answer(f"📊 **Результат анализа:**\n{analysis}", parse_mode="Markdown", reply_markup=menu)
             elif "для генерации полного WARNORD" in message.reply_to_message.text:
-                await message.answer("Генерирую WARNORD... 🛠", reply_markup=menu)
+                await message.answer("⚔ Обрабатываю запрос... (генерация WARNORD)", reply_markup=menu)
                 warnord = await generate_warnord(message.text)
                 await message.answer(f"⚔ **WARNORD:**\n{warnord}", parse_mode="Markdown", reply_markup=menu)
 
