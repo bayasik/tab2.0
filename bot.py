@@ -71,7 +71,7 @@ async def analyze_task(task_text: str):
             max_tokens=1000
         )
         return response["choices"][0]["message"]["content"]
-    except openai.OpenAIError as e:
+    except openai.error.OpenAIError as e:
         logging.error(f"Ошибка OpenAI API: {e}")
         return "❌ Ошибка при анализе задачи."
 
@@ -118,7 +118,7 @@ async def generate_warnord(task_text: str):
             max_tokens=1500
         )
         return response["choices"][0]["message"]["content"]
-    except openai.OpenAIError as e:
+    except openai.error.OpenAIError as e:
         logging.error(f"Ошибка OpenAI API: {e}")
         return "❌ Ошибка при генерации WARNORD."
 
@@ -145,7 +145,7 @@ async def analyze_weather():
             max_tokens=500
         )
         return response["choices"][0]["message"]["content"]
-    except openai.OpenAIError as e:
+    except openai.error.OpenAIError as e:
         logging.error(f"Ошибка OpenAI API: {e}")
         return "❌ Ошибка при анализе погоды."
 
