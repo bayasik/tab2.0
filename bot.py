@@ -1,151 +1,101 @@
+import os
 import asyncio
 import logging
-import os
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from dotenv import load_dotenv
 import openai
-import json
 
-# Логирование
+# Загрузка переменных окружения (для локального теста)
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 
-# Загружаем токены
-TOKEN = os.getenv("BOT_TOKEN")
+# Получаем токены из окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not BOT_TOKEN:
+    raise Exception("Переменная BOT_TOKEN не установлена!")
+if not OPENAI_API_KEY:
+    raise Exception("Переменная OPENAI_API_KEY не установлена!")
 
-# Инициализация бота и диспетчера
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
-
-# API-ключ OpenAI
 openai.api_key = OPENAI_API_KEY
 
-# Клавиатура
-menu = ReplyKeyboardMarkup(
+# Инициализация бота, диспетчера и хранилища состояний
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
+
+# Главное меню (клавиатура)
+main_menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Анализ задачи")],
         [KeyboardButton(text="Создать WARNORD")],
-        [KeyboardButton(text="Погода")]
+        [KeyboardButton(text="Погода")],
     ],
     resize_keyboard=True
 )
 
-# /start
+# Определяем FSM для ожидания текста задачи
+class Form(StatesGroup):
+    waiting_for_task_text = State()
+
+# Обработчик команды /start
 @dp.message(Command("start"))
-async def start_command(message: types.Message):
-    await message.answer("Привет! Я тактический ассистент. Выбери действие:", reply_markup=menu)
+async def start_handler(message: types.Message):
+    await message.answer("Привет! Отправь мне текст задачи для анализа по принципу 5W.", reply_markup=main_menu)
 
-# Анализ задачи (5W)
+# Обработчик кнопки "Анализ задачи" – перевод в состояние ожидания текста
 @dp.message(lambda message: message.text == "Анализ задачи")
-async def analyze_task_command(message: types.Message):
+async def ask_for_task(message: types.Message, state: FSMContext):
     await message.answer("Отправь текст задачи для анализа:")
+    await state.set_state(Form.waiting_for_task_text)
 
-@dp.message(lambda message: message.text and message.text not in ["Анализ задачи", "Создать WARNORD", "Погода"])
-async def process_task(message: types.Message):
-    await message.answer("🔍 Анализирую задачу...")
+# Обработка текста задачи и вызов OpenAI для анализа по принципу 5W
+@dp.message(Form.waiting_for_task_text)
+async def process_task(message: types.Message, state: FSMContext):
+    task_text = message.text
+    await message.answer("Анализирую задачу...")
 
-    prompt = f"""
-    Разбери задачу по принципу 5W:
-    {message.text}
-    Формат:
-    {{
-      "who": "...",
-      "what": "...",
-      "where": "...",
-      "when": "...",
-      "why": "..."
-    }}
-    """
+    prompt = (
+        "Проанализируй следующий текст задачи по принципу 5W. "
+        "Выдели информацию по следующим пунктам: Who (Кто?), What (Что?), Where (Где?), When (Когда?), Why (Почему?). "
+        "Ответь в формате JSON с ключами: 'who', 'what', 'where', 'when', 'why'.\n\n"
+        f"Текст задачи: {task_text}"
+    )
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "system", "content": prompt}]
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Ты помощник, который анализирует текст задачи по принципу 5W."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.5,
+            max_tokens=300
         )
-
-        analysis = json.loads(response["choices"][0]["message"]["content"])
-
-        result_text = (
-            f"📌 **Результат анализа:**\n"
-            f"1️⃣ Кто? {analysis['who']}\n"
-            f"2️⃣ Что? {analysis['what']}\n"
-            f"3️⃣ Где? {analysis['where']}\n"
-            f"4️⃣ Когда? {analysis['when']}\n"
-            f"5️⃣ Почему? {analysis['why']}"
-        )
-
-        await message.answer(result_text)
-
+        analysis = response.choices[0].message.content.strip()
+        await message.answer(f"Результат анализа:\n{analysis}", reply_markup=main_menu)
     except Exception as e:
-        logging.error(f"Ошибка при анализе: {e}")
-        await message.answer("⚠ Ошибка при анализе задачи.")
+        logging.exception("Ошибка при вызове OpenAI API")
+        await message.answer("Произошла ошибка при анализе задачи.", reply_markup=main_menu)
+    await state.clear()
 
-# **Создание WARNORD**
+# Обработчик кнопки "Создать WARNORD" (пока-заглушка)
 @dp.message(lambda message: message.text == "Создать WARNORD")
-async def create_warnord_command(message: types.Message):
-    await message.answer("Отправь текст задачи для генерации полного WARNORD:")
+async def create_warnord(message: types.Message):
+    await message.answer("Функция создания WARNORD пока не реализована.", reply_markup=main_menu)
 
-@dp.message(lambda message: message.text and message.text not in ["Анализ задачи", "Создать WARNORD", "Погода"])
-async def generate_warnord(message: types.Message):
-    await message.answer("📜 Генерирую WARNORD...")
+# Обработчик кнопки "Погода" (пока-заглушка)
+@dp.message(lambda message: message.text == "Погода")
+async def weather_handler(message: types.Message):
+    await message.answer("Функция погоды пока не реализована.", reply_markup=main_menu)
 
-    prompt = f"""
-    Составь полный WARNORD по задаче:
-    {message.text}
-
-    **Формат ответа:**
-    **WARNORD**
-    1️⃣ **СИТУАЦИЯ**
-    - Зона интереса: ...
-    - Зона операции: ...
-    - Местность: ...
-    - Погодные условия: ...
-    - Вражеское окружение: ...
-    - Дружественные силы: ...
-    - Гражданский фактор: ...
-
-    2️⃣ **ЗАДАНИЕ**
-    - Что: ...
-    - Кто: ...
-    - Где: ...
-    - Когда: ...
-    - Почему: ...
-
-    3️⃣ **ВЫПОЛНЕНИЕ**
-    - Концепция: ...
-    - Основной удар: ...
-    - Этапы: ...
-    - Роли в группе: ...
-    - Ожидаемый результат: ...
-
-    4️⃣ **ЛОГИСТИКА**
-    - Медицинская поддержка: ...
-    - Обеспечение ресурсами: ...
-    - Транспорт: ...
-    - Техническое обслуживание: ...
-
-    5️⃣ **КОМАНДОВАНИЕ И СВЯЗЬ**
-    - Командование: ...
-    - Связь: ...
-    - Кодовые слова: ...
-    - Связь в ЧС: ...
-    """
-
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "system", "content": prompt}]
-        )
-
-        warnord_text = response["choices"][0]["message"]["content"]
-        await message.answer(warnord_text)
-
-    except Exception as e:
-        logging.error(f"Ошибка при генерации WARNORD: {e}")
-        await message.answer("⚠ Ошибка при генерации WARNORD.")
-
-# Запуск бота
+# Главная функция запуска бота
 async def main():
     await dp.start_polling(bot)
 
