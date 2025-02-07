@@ -1,25 +1,24 @@
 import asyncio
 import logging
 import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
-import openai
 import json
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import Command
+from openai import OpenAI, OpenAIError
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
 
-# Загружаем токены
+# Загружаем токены из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
 
 # Создаём объекты бота и диспетчера
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Меню команд
+# Создаём клавиатуру меню
 menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Анализ задачи")],
@@ -29,83 +28,77 @@ menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Инлайн-кнопки для генерации WARNORD
-warnord_menu = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text="Ситуация", callback_data="situation")],
-        [InlineKeyboardButton(text="Задание", callback_data="mission")],
-        [InlineKeyboardButton(text="Выполнение", callback_data="execution")],
-        [InlineKeyboardButton(text="Логистика", callback_data="logistics")],
-        [InlineKeyboardButton(text="Связь", callback_data="comms")],
-        [InlineKeyboardButton(text="Экспортировать", callback_data="export_warnord")],
-    ]
-)
+# Инициализация клиента OpenAI
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Словарь для хранения данных WARNORD
-warnord_data = {}
 
-# Команда /start
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer("Привет! Я тактический ассистент. Выбери действие:", reply_markup=menu)
 
-# Анализ задачи (5W)
+
 @dp.message(lambda message: message.text == "Анализ задачи")
-async def analyze_task(message: types.Message):
+async def request_task(message: types.Message):
     await message.answer("Отправь текст задачи для анализа:")
 
-@dp.message(lambda message: message.text and message.text != "Анализ задачи")
+
+@dp.message(lambda message: message.text not in ["Анализ задачи", "Создать WARNORD", "Погода"])
 async def process_task(message: types.Message):
+    user_text = message.text.strip()
+
+    if not user_text:
+        await message.answer("Ошибка: Задача не может быть пустой.")
+        return
+
     await message.answer("Анализирую задачу...")
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "Разбери задачу по методу 5W."},
-                {"role": "user", "content": message.text}
+                {"role": "system", "content": "Разбей задачу на 5W (who, what, where, when, why)"},
+                {"role": "user", "content": user_text}
             ]
         )
-        task_analysis = json.loads(response["choices"][0]["message"]["content"])
-        warnord_data["task"] = task_analysis
 
-        formatted_analysis = (
-            f"**Время задания:** {task_analysis.get('when', 'не указано')}\n\n"
-            f"**Цель:**\n{task_analysis.get('what', 'не указано')}\n"
-        )
+        result_text = response.choices[0].message.content.strip()
 
-        await message.answer(formatted_analysis, parse_mode="Markdown")
-        await message.answer("Теперь можно создать WARNORD:", reply_markup=warnord_menu)
-    
-    except Exception as e:
-        logging.error(f"Ошибка при анализе: {e}")
-        await message.answer("Произошла ошибка при анализе задачи.")
+        # Проверяем, является ли результат валидным JSON
+        try:
+            result_data = json.loads(result_text)
+        except json.JSONDecodeError:
+            await message.answer("Ошибка: получен некорректный формат данных от AI.")
+            return
 
-# Генерация WARNORD по частям
-@dp.callback_query(lambda c: c.data in ["situation", "mission", "execution", "logistics", "comms"])
-async def generate_warnord(callback: types.CallbackQuery):
-    section = callback.data
+        formatted_result = f"""
+🔍 **Результат анализа:**
+**Кто:** {result_data.get("who", "Не указано")}
+**Что:** {result_data.get("what", "Не указано")}
+**Где:** {result_data.get("where", "Не указано")}
+**Когда:** {result_data.get("when", "Не указано")}
+**Почему:** {result_data.get("why", "Не указано")}
+"""
 
-    warnord_templates = {
-        "situation": "Параграф 1: СИТУАЦИЯ\nОперативная обстановка в зоне операции...",
-        "mission": f"Параграф 2: ЗАДАНИЕ\n{warnord_data.get('task', {}).get('what', 'не указано')}",
-        "execution": "Параграф 3: ВЫПОЛНЕНИЕ\nДетальный план действий...",
-        "logistics": "Параграф 4: ЛОГИСТИКА\nОбеспечение боеприпасами, медицинская поддержка...",
-        "comms": "Параграф 5: КОМАНДОВАНИЕ И СВЯЗЬ\nСредства связи и сигналы..."
-    }
+        await message.answer(formatted_result)
 
-    warnord_data[section] = warnord_templates[section]
-    await callback.message.answer(warnord_templates[section], parse_mode="Markdown")
+    except OpenAIError as e:
+        logging.error(f"Ошибка при вызове OpenAI API: {e}")
+        await message.answer("Произошла ошибка при анализе задачи. Попробуй позже.")
 
-# Экспорт полного WARNORD
-@dp.callback_query(lambda c: c.data == "export_warnord")
-async def export_warnord(callback: types.CallbackQuery):
-    full_warnord = "\n\n".join([warnord_data.get(sec, f"{sec.upper()} не заполнен.") for sec in ["situation", "mission", "execution", "logistics", "comms"]])
-    await callback.message.answer(f"**Полный WARNORD:**\n\n{full_warnord}", parse_mode="Markdown")
 
-# Запуск бота
+@dp.message(lambda message: message.text == "Создать WARNORD")
+async def create_warnord(message: types.Message):
+    await message.answer("Функция создания WARNORD пока не реализована.")
+
+
+@dp.message(lambda message: message.text == "Погода")
+async def weather_info(message: types.Message):
+    await message.answer("Функция погоды пока не реализована.")
+
+
 async def main():
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
