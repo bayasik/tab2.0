@@ -1,14 +1,10 @@
-# Используем официальный Python-образ
 FROM python:3.12
 
-# Устанавливаем рабочую директорию внутри контейнера
 WORKDIR /app
 
-# Копируем файлы проекта в контейнер
-COPY . /app/
-
-# Устанавливаем зависимости
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Запускаем бота
+COPY . .
+
 CMD ["python", "bot.py"]
