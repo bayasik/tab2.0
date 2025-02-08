@@ -1,57 +1,6 @@
 import asyncio
 import logging
 import os
-import sys
-import json
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command
-import openai
-
-# Настраиваем логирование
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Загружаем токены из переменных окружения
-TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Создаём объекты бота и диспетчера
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
-
-# Создаём клавиатуру меню
-menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📊 Анализ задачи")],
-        [KeyboardButton(text="⚔ Создать WARNORD")],
-        [KeyboardButton(text="🌤 Погода")],
-        [KeyboardButton(text="🔄 Рестарт")]
-    ],
-    resize_keyboard=True
-)
-
-openai.api_key = OPENAI_API_KEY
-
-@dp.message(Command("start"))
-async def start_command(message: types.Message):
-    await message.answer("Привет! Я тактический ассистент. Выбери действие:", reply_markup=menu)
-
-@dp.message()
-async def handle_messages(message: types.Message):
-    text = message.text.lower()
-    logger.info(f"📩 Получено сообщение: {text}")
-
-    if text == "📊 анализ задачи":
-       
-
-Вот исправленный код с добавленным импортом `sys` и исправленной функцией рестарта.  
-
-### **Исправленный код:**
-```python
-import asyncio
-import logging
-import os
 import sys  # Добавлен импорт sys
 import json
 from aiogram import Bot, Dispatcher, types
@@ -116,7 +65,7 @@ async def handle_messages(message: types.Message):
 async def restart_bot(message: types.Message):
     await message.answer("♻️ Перезапуск бота...")
     logger.info("♻️ Рестарт бота...")
-    os.execv(sys.executable, ['python'] + sys.argv)
+    os.execv(sys.executable, [sys.executable] + sys.argv)  # Исправлено выполнение рестарта
 
 ### АНАЛИЗ ЗАДАЧИ (5W, METT-TC, OCOKA, ASCOPE, анализ погоды)
 async def analyze_task(task_text: str):
