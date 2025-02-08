@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-import sys  # Добавлен импорт sys
+import sys
 import json
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -26,7 +26,7 @@ menu = ReplyKeyboardMarkup(
         [KeyboardButton(text="📊 Анализ задачи")],
         [KeyboardButton(text="⚔ Создать WARNORD")],
         [KeyboardButton(text="🌤 Погода")],
-        [KeyboardButton(text="🔄 Рестарт")]  # Добавлена кнопка рестарта
+        [KeyboardButton(text="🔄 Рестарт")],
     ],
     resize_keyboard=True
 )
@@ -40,6 +40,7 @@ async def start_command(message: types.Message):
 @dp.message()
 async def handle_messages(message: types.Message):
     text = message.text.lower()
+
     logger.info(f"📩 Получено сообщение: {text}")
 
     if text == "📊 анализ задачи":
@@ -53,19 +54,11 @@ async def handle_messages(message: types.Message):
         await restart_bot(message)
     else:
         if message.reply_to_message and "для анализа" in message.reply_to_message.text:
-            await message.answer("⏳ Обрабатываю запрос...")
             analysis = await analyze_task(message.text)
             await message.answer(f"📊 **Результат анализа:**\n{analysis}", parse_mode="Markdown")
         elif message.reply_to_message and "для генерации полного WARNORD" in message.reply_to_message.text:
-            await message.answer("⏳ Генерирую WARNORD...")
             warnord = await generate_warnord(message.text)
             await message.answer(f"⚔ **WARNORD:**\n{warnord}", parse_mode="Markdown")
-
-### Функция рестарта бота
-async def restart_bot(message: types.Message):
-    await message.answer("♻️ Перезапуск бота...")
-    logger.info("♻️ Рестарт бота...")
-    os.execv(sys.executable, [sys.executable] + sys.argv)  # Исправлено выполнение рестарта
 
 ### АНАЛИЗ ЗАДАЧИ (5W, METT-TC, OCOKA, ASCOPE, анализ погоды)
 async def analyze_task(task_text: str):
@@ -86,7 +79,7 @@ async def analyze_task(task_text: str):
         )
         return response["choices"][0]["message"]["content"]
     except openai.OpenAIError as e:
-        logger.error(f"❌ Ошибка OpenAI API: {e}")
+        logger.error(f"Ошибка OpenAI API: {e}")
         return "❌ Ошибка при анализе задачи."
 
 ### ГЕНЕРАЦИЯ ПОЛНОГО WARNORD
@@ -133,7 +126,7 @@ async def generate_warnord(task_text: str):
         )
         return response["choices"][0]["message"]["content"]
     except openai.OpenAIError as e:
-        logger.error(f"❌ Ошибка OpenAI API: {e}")
+        logger.error(f"Ошибка OpenAI API: {e}")
         return "❌ Ошибка при генерации WARNORD."
 
 ### АНАЛИЗ ПОГОДЫ (ТАБЛИЦА)
@@ -160,8 +153,16 @@ async def analyze_weather():
         )
         return response["choices"][0]["message"]["content"]
     except openai.OpenAIError as e:
-        logger.error(f"❌ Ошибка OpenAI API: {e}")
+        logger.error(f"Ошибка OpenAI API: {e}")
         return "❌ Ошибка при анализе погоды."
+
+### ФУНКЦИЯ РЕСТАРТА БОТА
+async def restart_bot(message: types.Message):
+    await message.answer("♻️ Перезапуск бота...")
+    logger.info("♻️ Рестарт бота...")
+    await asyncio.sleep(2)  # Даем время на отправку сообщения
+    sys.exit(0)  # Завершаем текущий процесс
+    os.execv(sys.executable, [sys.executable] + sys.argv)  # Запускаем новый процесс
 
 ### ЗАПУСК БОТА
 async def main():
