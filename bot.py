@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import os
-import sys
 import json
+import sys
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
@@ -10,6 +10,7 @@ import openai
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Загружаем токены из переменных окружения
 TOKEN = os.getenv("BOT_TOKEN")
@@ -33,11 +34,6 @@ menu = ReplyKeyboardMarkup(
 
 openai.api_key = OPENAI_API_KEY
 
-# Функция отправки логов в Telegram
-async def send_log_to_admin(message):
-    if ADMIN_CHAT_ID:
-        await bot.send_message(ADMIN_CHAT_ID, f"📢 Лог:\n{message}")
-
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer("Привет! Я тактический ассистент. Выбери действие:", reply_markup=menu)
@@ -45,9 +41,8 @@ async def start_command(message: types.Message):
 @dp.message()
 async def handle_messages(message: types.Message):
     text = message.text.lower()
-    logging.info(f"📩 Получено сообщение: {text}")
-    await send_log_to_admin(f"📩 Получено сообщение: {text}")
-
+    logger.info(f"📩 Получено сообщение: {text}")
+    
     if text == "📊 анализ задачи":
         await message.answer("Отправь текст боевой задачи для анализа (5W, METT-TC, OCOKA, ASCOPE, анализ погоды).")
     elif text == "⚔ создать warnord":
@@ -56,14 +51,14 @@ async def handle_messages(message: types.Message):
         weather_report = await analyze_weather()
         await message.answer(weather_report, parse_mode="Markdown")
     elif text == "🔄 рестарт":
-        await message.answer("♻ Перезапуск бота...")
-        await send_log_to_admin("♻ Перезапуск бота...")
-        restart_bot()
+        await restart_bot(message)
     else:
         if message.reply_to_message and "для анализа" in message.reply_to_message.text:
+            await message.answer("🔄 Обрабатываю запрос, пожалуйста, подождите...")
             analysis = await analyze_task(message.text)
             await message.answer(f"📊 **Результат анализа:**\n{analysis}", parse_mode="Markdown")
         elif message.reply_to_message and "для генерации полного WARNORD" in message.reply_to_message.text:
+            await message.answer("🔄 Генерация WARNORD, пожалуйста, подождите...")
             warnord = await generate_warnord(message.text)
             await message.answer(f"⚔ **WARNORD:**\n{warnord}", parse_mode="Markdown")
 
@@ -78,16 +73,17 @@ async def analyze_task(task_text: str):
 
 Текст задачи: """ + task_text
 
+    logger.info("📡 Отправка запроса на анализ задачи в OpenAI...")
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
             messages=[{"role": "system", "content": prompt}],
-            max_tokens=1000
+            max_tokens=1000,
+            request_timeout=20
         )
         return response["choices"][0]["message"]["content"]
     except openai.OpenAIError as e:
-        logging.error(f"Ошибка OpenAI API: {e}")
-        await send_log_to_admin(f"❌ Ошибка OpenAI API: {e}")
+        logger.error(f"❌ Ошибка OpenAI API: {e}")
         return "❌ Ошибка при анализе задачи."
 
 ### ГЕНЕРАЦИЯ ПОЛНОГО WARNORD
@@ -126,16 +122,17 @@ async def generate_warnord(task_text: str):
 
 **Текст боевой задачи:** """ + task_text
 
+    logger.info("📡 Отправка запроса на генерацию WARNORD в OpenAI...")
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
             messages=[{"role": "system", "content": prompt}],
-            max_tokens=1500
+            max_tokens=1500,
+            request_timeout=30
         )
         return response["choices"][0]["message"]["content"]
     except openai.OpenAIError as e:
-        logging.error(f"Ошибка OpenAI API: {e}")
-        await send_log_to_admin(f"❌ Ошибка OpenAI API: {e}")
+        logger.error(f"❌ Ошибка OpenAI API: {e}")
         return "❌ Ошибка при генерации WARNORD."
 
 ### АНАЛИЗ ПОГОДЫ (ТАБЛИЦА)
@@ -154,6 +151,7 @@ async def analyze_weather():
 Анализ погоды должен включать **видимость, ветер, осадки, тучность, температуру и влажность**, а также их влияние на обе стороны.
 """
 
+    logger.info("📡 Отправка запроса на анализ погоды в OpenAI...")
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
@@ -162,17 +160,18 @@ async def analyze_weather():
         )
         return response["choices"][0]["message"]["content"]
     except openai.OpenAIError as e:
-        logging.error(f"Ошибка OpenAI API: {e}")
-        await send_log_to_admin(f"❌ Ошибка OpenAI API: {e}")
+        logger.error(f"❌ Ошибка OpenAI API: {e}")
         return "❌ Ошибка при анализе погоды."
 
-### ФУНКЦИЯ РЕСТАРТА БОТА
-def restart_bot():
-    os.execv(sys.executable, ['python'] + sys.argv)
+### РЕСТАРТ БОТА
+async def restart_bot(message: types.Message):
+    await message.answer("🔄 Перезапуск бота...")
+    logger.info("♻ Рестарт бота...")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 ### ЗАПУСК БОТА
 async def main():
-    logging.info("🚀 Запуск бота...")
+    logger.info("🚀 Запуск бота...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
