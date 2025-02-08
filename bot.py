@@ -37,7 +37,7 @@ async def start_command(message: types.Message):
 @dp.message()
 async def handle_messages(message: types.Message):
     text = message.text.lower()
-    logging.info(f"Получено сообщение: {text}")
+    logging.info(f"📩 Получено сообщение: {text}")
 
     if text == "📊 анализ задачи":
         await message.answer("Отправь текст боевой задачи для анализа (5W, METT-TC, OCOKA, ASCOPE, анализ погоды).")
@@ -68,14 +68,14 @@ async def analyze_task(task_text: str):
 Текст задачи: {task_text}
 """
 
-    logging.info("Отправляю запрос на анализ задачи в OpenAI...")
+    logging.info("🚀 Отправляю запрос на анализ задачи в OpenAI...")
 
     try:
         response = await asyncio.wait_for(openai.ChatCompletion.acreate(
             model="gpt-4-turbo",
             messages=[{"role": "system", "content": prompt}],
             max_tokens=1000
-        ), timeout=30)  # 30 секунд на обработку
+        ), timeout=30)
         result = response["choices"][0]["message"]["content"]
         logging.info("✅ Анализ задачи успешно получен!")
         return result
@@ -83,7 +83,7 @@ async def analyze_task(task_text: str):
         logging.error("⏳ Таймаут при анализе задачи.")
         return "❌ Ошибка: запрос к OpenAI занял слишком много времени."
     except openai.OpenAIError as e:
-        logging.error(f"Ошибка OpenAI API: {e}")
+        logging.error(f"❌ Ошибка OpenAI API: {e}")
         return f"❌ Ошибка при анализе задачи: {e}"
 
 ### ГЕНЕРАЦИЯ ПОЛНОГО WARNORD
@@ -123,14 +123,14 @@ async def generate_warnord(task_text: str):
 **Текст боевой задачи:** {task_text}
 """
 
-    logging.info("Отправляю запрос на генерацию WARNORD в OpenAI...")
+    logging.info("🚀 Отправляю запрос на генерацию WARNORD в OpenAI...")
 
     try:
         response = await asyncio.wait_for(openai.ChatCompletion.acreate(
             model="gpt-4-turbo",
             messages=[{"role": "system", "content": prompt}],
             max_tokens=1500
-        ), timeout=40)  # 40 секунд на обработку
+        ), timeout=40)
         result = response["choices"][0]["message"]["content"]
         logging.info("✅ WARNORD успешно сгенерирован!")
         return result
@@ -138,7 +138,7 @@ async def generate_warnord(task_text: str):
         logging.error("⏳ Таймаут при генерации WARNORD.")
         return "❌ Ошибка: запрос к OpenAI занял слишком много времени."
     except openai.OpenAIError as e:
-        logging.error(f"Ошибка OpenAI API: {e}")
+        logging.error(f"❌ Ошибка OpenAI API: {e}")
         return f"❌ Ошибка при генерации WARNORD: {e}"
 
 ### АНАЛИЗ ПОГОДЫ (ТАБЛИЦА)
@@ -154,20 +154,23 @@ async def analyze_weather():
 | Тучность    | Высокая               | Снижает точность дронов | Ограниченная аэроразведка |
 | Температура | +5°C, влажность 80%   | Возможность переохлаждения | Требуется утепление |
 
+Анализ погоды должен включать **видимость, ветер, осадки, тучность, температуру и влажность**, а также их влияние на обе стороны.
 """
 
-    logging.info("Отправляю запрос на анализ погоды в OpenAI...")
+    logging.info("🚀 Отправляю запрос на анализ погоды в OpenAI...")
 
     try:
-        response = await openai.ChatCompletion.acreate(
+        response = await asyncio.wait_for(openai.ChatCompletion.acreate(
             model="gpt-4-turbo",
             messages=[{"role": "system", "content": prompt}],
             max_tokens=500
-        )
-        return response["choices"][0]["message"]["content"]
-    except openai.OpenAIError as e:
-        logging.error(f"Ошибка OpenAI API: {e}")
-        return "❌ Ошибка при анализе погоды."
+        ), timeout=20)
+        result = response["choices"][0]["message"]["content"]
+        logging.info("✅ Анализ погоды успешно получен!")
+        return result
+    except asyncio.TimeoutError:
+        logging.error("⏳ Таймаут при анализе погоды.")
+        return "❌ Ошибка: запрос к OpenAI занял слишком много времени."
 
 ### ЗАПУСК БОТА
 async def main():
